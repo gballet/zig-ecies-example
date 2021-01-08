@@ -71,12 +71,36 @@ fn get_bobs_key() !*openssl.EC_KEY {
     return keybob.?;
 }
 
+fn get_shared_secret(other : *const openssl.EC_POINT, skey : *openssl.BIGNUM, group : *const openssl.EC_GROUP) !*openssl.EC_POINT {
+    // S = Kb*r
+    var spoint = openssl.EC_POINT_new(group);
+    if (spoint == null) {
         std.log.info("could not create r: {}", .{openssl.ERR_get_error()});
         return error.CouldNotCreateS;
     }
+
+    var one = openssl.BN_new();
+    if (openssl.BN_one(one) != 1) {
+        return error.CouldNotSetOne;
+    }
+    var zero = openssl.BN_new();
+    if (openssl.BN_zero(zero) != 1) {
+        return error.CouldNotSetZero;
+    }
+
+    // S = 0*G + r*Kb
+    if (openssl.EC_POINT_mul(group, spoint, one, other, skey, null) != 1) {
         std.log.info("could not compute S: {}", .{openssl.ERR_get_error()});
         return error.CouldNotComputeS;
     }
+    // check S != 0
+    if (openssl.EC_POINT_is_at_infinity(group, spoint) == 1) {
+        return error.SAtInfinity;
+    }
+
+    return spoint.?;
+}
+
 pub fn main() anyerror!void {
     var err = openssl.OPENSSL_init_crypto(openssl.OPENSSL_INIT_LOAD_CONFIG, null);
     if (err == 0) {
@@ -98,4 +122,8 @@ pub fn main() anyerror!void {
     var keybob = try get_bobs_key();
     defer openssl.EC_KEY_free(keybob);
     const bob_pkey = try get_pkey(keybob);
+
+    // Shared secret
+    const spoint = try get_shared_secret(bob_pkey, skey.?, group.?);
+    defer openssl.EC_POINT_clear_free(spoint);
 }
