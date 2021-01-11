@@ -101,6 +101,20 @@ fn get_shared_secret(other : *const openssl.EC_POINT, skey : *openssl.BIGNUM, gr
     return spoint.?;
 }
 
+fn get_x_coordinate(point: *openssl.EC_POINT, group: *const openssl.EC_GROUP, out : *[32]u8) !void {
+    var x = openssl.BN_new();
+    defer openssl.BN_clear_free(x);
+    if (openssl.EC_POINT_get_affine_coordinates_GFp(group, point, x, null, null) != 1) {
+        std.log.info("could not compute S: {}", .{@ptrCast([*:0]const u8, openssl.ERR_reason_error_string(openssl.ERR_get_error()))});
+        return error.CouldNotGetXCoordinate;
+    }
+
+    if (openssl.BN_bn2bin(x, out) != 32) {
+        std.log.info("could not get bytes: {}", .{@ptrCast([*:0]const u8, openssl.ERR_reason_error_string(openssl.ERR_get_error()))});
+        return error.CouldNotGetBytes;
+    }
+}
+
 pub fn main() anyerror!void {
     var err = openssl.OPENSSL_init_crypto(openssl.OPENSSL_INIT_LOAD_CONFIG, null);
     if (err == 0) {
@@ -126,4 +140,9 @@ pub fn main() anyerror!void {
     // Shared secret
     const spoint = try get_shared_secret(bob_pkey, skey.?, group.?);
     defer openssl.EC_POINT_clear_free(spoint);
+
+    var s : [32]u8 = undefined;
+    try get_x_coordinate(spoint, group.?, &s);
+
+    std.log.info("s={x}", .{s});
 }
