@@ -6,7 +6,7 @@ const openssl = @cImport({
     @cInclude("openssl/err.h");
 });
 
-fn generate_key(key : *?*openssl.EC_KEY, skey : *?*const openssl.BIGNUM) !void {
+fn generate_key(key: *?*openssl.EC_KEY, skey: *?*const openssl.BIGNUM) !void {
     std.log.info("NID: {}", .{openssl.NID_secp256k1});
     key.* = openssl.EC_KEY_new_by_curve_name(openssl.NID_secp256k1);
     if (key.* == null) {
@@ -32,7 +32,7 @@ fn generate_key(key : *?*openssl.EC_KEY, skey : *?*const openssl.BIGNUM) !void {
     std.log.info("secret key: {}", .{@ptrCast([*:0]u8, openssl.BN_bn2hex(skey.*))});
 }
 
-fn get_pkey(key : ?*openssl.EC_KEY) !*const openssl.EC_POINT {
+fn get_pkey(key: ?*openssl.EC_KEY) !*const openssl.EC_POINT {
     var pkey = openssl.EC_KEY_get0_public_key(key);
     if (pkey == null) {
         std.log.info("could not get public key: {}", .{openssl.ERR_get_error()});
@@ -71,7 +71,7 @@ fn get_bobs_key() !*openssl.EC_KEY {
     return keybob.?;
 }
 
-fn get_shared_secret(other : *const openssl.EC_POINT, skey : *openssl.BIGNUM, group : *const openssl.EC_GROUP) !*openssl.EC_POINT {
+fn get_shared_secret(other: *const openssl.EC_POINT, skey: *openssl.BIGNUM, group: *const openssl.EC_GROUP) !*openssl.EC_POINT {
     // S = Kb*r
     var spoint = openssl.EC_POINT_new(group);
     if (spoint == null) {
@@ -123,8 +123,8 @@ pub fn main() anyerror!void {
     defer openssl.OPENSSL_cleanup();
     std.log.info("initialized", .{});
 
-    var key : ?*openssl.EC_KEY = undefined;
-    var skey : ?*openssl.BIGNUM = undefined;
+    var key: ?*openssl.EC_KEY = undefined;
+    var skey: ?*openssl.BIGNUM = undefined;
     try generate_key(&key, &skey);
     defer openssl.EC_KEY_free(key);
 
@@ -132,7 +132,7 @@ pub fn main() anyerror!void {
     
     const group = openssl.EC_KEY_get0_group(key);
 
-    // Prepare Kb 
+    // Prepare Kb
     var keybob = try get_bobs_key();
     defer openssl.EC_KEY_free(keybob);
     const bob_pkey = try get_pkey(keybob);
