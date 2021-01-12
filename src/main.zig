@@ -102,7 +102,7 @@ fn get_shared_secret(other: *const openssl.EC_POINT, skey: *openssl.BIGNUM, grou
     return spoint.?;
 }
 
-fn get_x_coordinate(point: *openssl.EC_POINT, group: *const openssl.EC_GROUP, out : *[32]u8) !void {
+fn get_x_coordinate(point: *openssl.EC_POINT, group: *const openssl.EC_GROUP, out: *[32]u8) !void {
     var x = openssl.BN_new();
     defer openssl.BN_clear_free(x);
     if (openssl.EC_POINT_get_affine_coordinates_GFp(group, point, x, null, null) != 1) {
@@ -161,7 +161,7 @@ pub fn main() anyerror!void {
     const spoint = try get_shared_secret(bob_pkey, skey.?, group.?);
     defer openssl.EC_POINT_clear_free(spoint);
 
-    var s : [32]u8 = undefined;
+    var s: [32]u8 = undefined;
     try get_x_coordinate(spoint, group.?, &s);
 
     std.log.info("s={x}", .{s});
