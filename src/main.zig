@@ -5,6 +5,7 @@ const openssl = @cImport({
     @cInclude("openssl/ec.h");
     @cInclude("openssl/err.h");
 });
+const crypto = std.crypto;
 
 fn generate_key(key: *?*openssl.EC_KEY, skey: *?*const openssl.BIGNUM) !void {
     std.log.info("NID: {}", .{openssl.NID_secp256k1});
@@ -115,6 +116,25 @@ fn get_x_coordinate(point: *openssl.EC_POINT, group: *const openssl.EC_GROUP, ou
     }
 }
 
+fn kdf(key: *std.ArrayList(u8), len: usize, z: []const u8, s1: ?[]const u8) !void {
+    const digest_length = crypto.hash.sha3.Sha3_256.digest_length;
+    var counter: u32 = 1;
+    var counter_bytes = [4]u8{ 0, 0, 0, 0 };
+    const aligned_len = len + (digest_length - len % digest_length) % digest_length;
+
+    while (key.items.len < aligned_len) : (counter += 1) {
+        var hasher = crypto.hash.sha3.Sha3_256.init(crypto.hash.sha3.Sha3_256.Options{});
+        std.mem.writeIntBig(u32, counter_bytes[0..], counter);
+        hasher.update(counter_bytes[0..]);
+        hasher.update(z);
+        if (s1 != null)
+            hasher.update(s1.?);
+        var k: [32]u8 = undefined;
+        hasher.final(&k);
+        _ = try key.writer().write(k[0..]);
+    }
+}
+
 pub fn main() anyerror!void {
     var err = openssl.OPENSSL_init_crypto(openssl.OPENSSL_INIT_LOAD_CONFIG, null);
     if (err == 0) {
@@ -145,4 +165,14 @@ pub fn main() anyerror!void {
     try get_x_coordinate(spoint, group.?, &s);
 
     std.log.info("s={x}", .{s});
+
+    // KDF
+    var buffer = std.ArrayList(u8).init(std.testing.allocator);
+    defer buffer.deinit();
+    try kdf(&buffer, 64, s[0..], null);
+
+    const ke = buffer.items[0..32];
+    const km = buffer.items[32..];
+
+    std.log.info("ke={x} km={x}", .{ ke, km });
 }
