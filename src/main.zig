@@ -4,6 +4,7 @@ const openssl = @cImport({
     @cInclude("openssl/obj_mac.h");
     @cInclude("openssl/ec.h");
     @cInclude("openssl/err.h");
+    @cInclude("openssl/evp.h");
 });
 const crypto = std.crypto;
 
@@ -149,7 +150,7 @@ pub fn main() anyerror!void {
     defer openssl.EC_KEY_free(key);
 
     var pkey = try get_pkey(key);
-    
+
     const group = openssl.EC_KEY_get0_group(key);
 
     // Prepare Kb
@@ -175,4 +176,33 @@ pub fn main() anyerror!void {
     const km = buffer.items[32..];
 
     std.log.info("ke={x} km={x}", .{ ke, km });
+
+    // using openssl's aes instead of zig's as the zig API
+    // seems still unstable.
+    var iv: [16]u8 = undefined;
+    var in = "croissants";
+    var out: [32]u8 = undefined;
+    var outlen1: c_int = undefined;
+    var outlen2: c_int = undefined;
+    std.log.info("{} {} {x}", .{ outlen1, outlen2, out });
+
+    var ctx = openssl.EVP_CIPHER_CTX_new();
+    if (ctx == null) {
+        return error.CouldNotInitializeEVPCtx;
+    }
+
+    if (openssl.EVP_EncryptInit(ctx, openssl.EVP_aes_128_ctr(), &s, &iv) != 1) {
+        std.log.info("could not initialize aes: {}", .{@ptrCast(?[*:0]const u8, openssl.ERR_reason_error_string(openssl.ERR_get_error()))});
+        return error.AESInit;
+    }
+    if (openssl.EVP_EncryptUpdate(ctx, &out, &outlen1, in[0..], in.len) != 1) {
+        std.log.info("could not update aes: {}", .{@ptrCast(?[*:0]const u8, openssl.ERR_reason_error_string(openssl.ERR_get_error()))});
+        return error.AESUpdate;
+    }
+    if (openssl.EVP_EncryptFinal(ctx, out[@intCast(usize, outlen1)..].ptr, &outlen2) != 1) {
+        std.log.info("could not finalize aes: {}", .{@ptrCast(?[*:0]const u8, openssl.ERR_reason_error_string(openssl.ERR_get_error()))});
+        return error.AESFinal;
+    }
+
+    std.log.info("{} {} {x}", .{ outlen1, outlen2, out });
 }
