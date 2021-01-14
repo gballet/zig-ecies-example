@@ -151,12 +151,12 @@ pub fn main() anyerror!void {
 
     var pkey = try get_pkey(key);
 
-    const group = openssl.EC_KEY_get0_group(key);
 
     // Prepare Kb
     var keybob = try get_bobs_key();
     defer openssl.EC_KEY_free(keybob);
     const bob_pkey = try get_pkey(keybob);
+    const group = openssl.EC_KEY_get0_group(keybob);
 
     // Shared secret
     const spoint = try get_shared_secret(bob_pkey, skey.?, group.?);
