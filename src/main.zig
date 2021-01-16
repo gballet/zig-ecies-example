@@ -170,7 +170,7 @@ pub fn main() anyerror!void {
     // KDF
     var buffer = std.ArrayList(u8).init(std.testing.allocator);
     defer buffer.deinit();
-    try kdf(&buffer, 64, s[0..], null);
+    try kdf(&buffer, 32, s[0..], null);
 
     const ke = buffer.items[0..32];
     const km = buffer.items[32..];
