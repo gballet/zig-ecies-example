@@ -173,18 +173,17 @@ pub fn main() anyerror!void {
     defer buffer.deinit();
     try kdf(&buffer, 32, s[0..], null);
 
-    const ke = buffer.items[0..32];
-    const km = buffer.items[32..];
+    const ke = buffer.items[0..16];
+    const km = buffer.items[16..];
 
-    std.log.info("ke={x} km={x}", .{ ke, km });
+    std.log.info("ke={x} km={x} {} {}", .{ ke, km, ke.len, km.len });
 
     // AES encryption
-    var aesKey = [_]u8{ 'c', 'r', 'o', 'i', 's', 's', 'a', 'n', 't', 's', '4', 'e', 'v', 'e', 'r', '!' };
     const iv = [_]u8{ 0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff };
     var in = "I love croissants very, very much";
     var out: [in.len]u8 = undefined;
 
-    var ctx = aes.Aes128.initEnc(aesKey);
+    var ctx = aes.Aes128.initEnc(ke.*);
     crypto.core.modes.ctr(aes.AesEncryptCtx(aes.Aes128), ctx, out[0..], in[0..], iv, builtin.Endian.Big);
 
     std.log.info("encrypted payload: {x} len={}", .{ out, out.len });
