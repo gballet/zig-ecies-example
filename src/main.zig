@@ -9,6 +9,7 @@ const openssl = @cImport({
 const crypto = std.crypto;
 const builtin = std.builtin;
 const aes = crypto.core.aes;
+const hmac = crypto.auth.hmac;
 
 fn generate_key(key: *?*openssl.EC_KEY, skey: *?*const openssl.BIGNUM) !void {
     std.log.info("NID: {}", .{openssl.NID_secp256k1});
@@ -187,4 +188,13 @@ pub fn main() anyerror!void {
     crypto.core.modes.ctr(aes.AesEncryptCtx(aes.Aes128), ctx, out[0..], in[0..], iv, builtin.Endian.Big);
 
     std.log.info("encrypted payload: {x} len={}", .{ out, out.len });
+
+    // Compute the MAC
+    var d: [hmac.sha2.HmacSha256.mac_length]u8 = undefined;
+    var hmac256 = hmac.sha2.HmacSha256.init(km);
+    hmac.sha2.HmacSha256.update(&hmac256, out[0..]);
+    //crypto.auth.hmac.Hmac.update(hmac, s2);
+    hmac.sha2.HmacSha256.final(&hmac256, d[0..]);
+
+    std.log.info("d={x}", .{d});
 }
