@@ -83,7 +83,7 @@ const Key = struct {
         const grp = self.group();
 
         // S = Kb*r
-        var spoint = openssl.EC_POINT_new(grp.?);
+        var spoint = openssl.EC_POINT_new(grp);
         if (spoint == null) {
             std.log.info("could not create r: {}", .{openssl.ERR_get_error()});
             return error.CouldNotCreateS;
@@ -99,7 +99,8 @@ const Key = struct {
         }
 
         // S = 0*G + r*Kb
-        if (openssl.EC_POINT_mul(grp, spoint, one, try other.pubkey(), self.skey.?, null) != 1) {
+        const rp = try other.pubkey();
+        if (openssl.EC_POINT_mul(grp, spoint, one, rp.get_point(), self.skey.?, null) != 1) {
             std.log.info("could not compute S: {}", .{openssl.ERR_get_error()});
             return error.CouldNotComputeS;
         }
@@ -111,17 +112,21 @@ const Key = struct {
         return spoint.?;
     }
 
-    pub fn pubkey(self: Key) !*const openssl.EC_POINT {
+    pub fn pubkey(self: Key) !PubKey {
         var pkey = openssl.EC_KEY_get0_public_key(self.key.?);
         if (pkey == null) {
             std.log.info("could not get public key: {}", .{openssl.ERR_get_error()});
             return error.CouldNotGetPublicKey;
         }
-        return pkey.?;
+        return PubKey.from_EC_POINT(pkey.?);
     }
 
-    pub fn group(self: Key) ?*const openssl.EC_GROUP {
-        return openssl.EC_KEY_get0_group(self.key.?);
+    pub fn group(self: Key) *const openssl.EC_GROUP {
+        return openssl.EC_KEY_get0_group(self.key.?).?;
+    }
+
+    pub fn serialize(self: Key, out: []u8) !void {
+        return (try self.pubkey()).serialize(self.group(), out[0..]);
     }
 
     pub fn free(self: Key) void {
@@ -130,34 +135,52 @@ const Key = struct {
 };
 
 const PubKey = struct {
-    point: *openssl.EC_POINT,
+    point: *const openssl.EC_POINT,
 
-    fn x(self: PubKey, *[32]u8) !void {
-        var x = openssl.BN_new();
-        defer openssl.BN_clear_free(x);
-        if (openssl.EC_POINT_get_affine_coordinates_GFp(group, sekf.point, x, null, null) != 1) {
+    pub fn get_point(self: PubKey) *const openssl.EC_POINT {
+        return self.point;
+    }
+
+    pub fn from_EC_POINT(point: *const openssl.EC_POINT) PubKey {
+        return PubKey{ .point = point };
+    }
+
+    pub fn x(self: PubKey, grp: *const openssl.EC_GROUP, out: *[32]u8) !void {
+        var coord = openssl.BN_new();
+        defer openssl.BN_clear_free(coord);
+        if (openssl.EC_POINT_get_affine_coordinates_GFp(grp, self.point, coord, null, null) != 1) {
             std.log.info("could not compute S: {}", .{@ptrCast([*:0]const u8, openssl.ERR_reason_error_string(openssl.ERR_get_error()))});
             return error.CouldNotGetXCoordinate;
         }
 
-        if (openssl.BN_bn2bin(x, out) != 32) {
+        if (openssl.BN_bn2bin(coord, out) != 32) {
             std.log.info("could not get bytes: {}", .{@ptrCast([*:0]const u8, openssl.ERR_reason_error_string(openssl.ERR_get_error()))});
             return error.CouldNotGetBytes;
         }
     }
 
-    fn y(self: PubKey, *[32]u8) !void {
-        var y = openssl.BN_new();
-        defer openssl.BN_clear_free(y);
-        if (openssl.EC_POINT_get_affine_coordinates_GFp(group, self.point, null, y, null) != 1) {
+    pub fn y(self: PubKey, grp: *const openssl.EC_GROUP, out: *[32]u8) !void {
+        var coord = openssl.BN_new();
+        defer openssl.BN_clear_free(coord);
+        if (openssl.EC_POINT_get_affine_coordinates_GFp(grp, self.point, null, coord, null) != 1) {
             std.log.info("could not compute S: {}", .{@ptrCast([*:0]const u8, openssl.ERR_reason_error_string(openssl.ERR_get_error()))});
             return error.CouldNotGetXCoordinate;
         }
 
-        if (openssl.BN_bn2bin(y, out) != 32) {
+        if (openssl.BN_bn2bin(coord, out) != 32) {
             std.log.info("could not get bytes: {}", .{@ptrCast([*:0]const u8, openssl.ERR_reason_error_string(openssl.ERR_get_error()))});
             return error.CouldNotGetBytes;
         }
+    }
+
+    pub fn serialize(self: PubKey, grp: *const openssl.EC_GROUP, out: []u8) !void {
+        if (out.len < 65) {
+            return error.NotEnoughMemoryToSerialize;
+        }
+
+        out[0] = 4;
+        try self.x(grp, out[1..33]);
+        try self.y(grp, out[33..65]);
     }
 };
 
@@ -214,7 +237,7 @@ pub fn main() anyerror!void {
     defer openssl.EC_POINT_clear_free(spoint);
 
     var s: [32]u8 = undefined;
-    try get_x_coordinate(spoint, keybob.group().?, &s);
+    try get_x_coordinate(spoint, keybob.group(), &s);
 
     std.log.info("s={x}", .{s});
 
@@ -228,22 +251,25 @@ pub fn main() anyerror!void {
 
     std.log.info("ke={x} km={x} {} {}", .{ ke, km, ke.len, km.len });
 
+    var in = "I love croissants very, very much";
+    const serlen = 65; // Length of a serialized point
+    var out: [serlen + in.len + hmac.sha2.HmacSha256.mac_length]u8 = undefined;
+    try r.serialize(out[0..serlen]);
+
     // AES encryption
     const iv = [_]u8{ 0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff };
-    var in = "I love croissants very, very much";
-    var out: [in.len]u8 = undefined;
-
     var ctx = aes.Aes128.initEnc(ke.*);
-    crypto.core.modes.ctr(aes.AesEncryptCtx(aes.Aes128), ctx, out[0..], in[0..], iv, builtin.Endian.Big);
+    crypto.core.modes.ctr(aes.AesEncryptCtx(aes.Aes128), ctx, out[serlen .. serlen + in.len], in[0..], iv, builtin.Endian.Big);
 
     std.log.info("encrypted payload: {x} len={}", .{ out, out.len });
 
     // Compute the MAC
     var d: [hmac.sha2.HmacSha256.mac_length]u8 = undefined;
     var hmac256 = hmac.sha2.HmacSha256.init(km);
-    hmac.sha2.HmacSha256.update(&hmac256, out[0..]);
+    hmac.sha2.HmacSha256.update(&hmac256, out[serlen .. serlen + in.len]);
     //crypto.auth.hmac.Hmac.update(hmac, s2);
-    hmac.sha2.HmacSha256.final(&hmac256, d[0..]);
+    hmac.sha2.HmacSha256.final(&hmac256, out[serlen + in.len ..]);
 
-    std.log.info("d={x}", .{d});
+    std.log.info("d={x}", .{out[serlen + in.len ..]});
+    std.log.info("final={x}", .{out[0..]});
 }
