@@ -127,7 +127,38 @@ const Key = struct {
     pub fn free(self: Key) void {
         openssl.EC_KEY_free(self.key.?);
     }
+};
 
+const PubKey = struct {
+    point: *openssl.EC_POINT,
+
+    fn x(self: PubKey, *[32]u8) !void {
+        var x = openssl.BN_new();
+        defer openssl.BN_clear_free(x);
+        if (openssl.EC_POINT_get_affine_coordinates_GFp(group, sekf.point, x, null, null) != 1) {
+            std.log.info("could not compute S: {}", .{@ptrCast([*:0]const u8, openssl.ERR_reason_error_string(openssl.ERR_get_error()))});
+            return error.CouldNotGetXCoordinate;
+        }
+
+        if (openssl.BN_bn2bin(x, out) != 32) {
+            std.log.info("could not get bytes: {}", .{@ptrCast([*:0]const u8, openssl.ERR_reason_error_string(openssl.ERR_get_error()))});
+            return error.CouldNotGetBytes;
+        }
+    }
+
+    fn y(self: PubKey, *[32]u8) !void {
+        var y = openssl.BN_new();
+        defer openssl.BN_clear_free(y);
+        if (openssl.EC_POINT_get_affine_coordinates_GFp(group, self.point, null, y, null) != 1) {
+            std.log.info("could not compute S: {}", .{@ptrCast([*:0]const u8, openssl.ERR_reason_error_string(openssl.ERR_get_error()))});
+            return error.CouldNotGetXCoordinate;
+        }
+
+        if (openssl.BN_bn2bin(y, out) != 32) {
+            std.log.info("could not get bytes: {}", .{@ptrCast([*:0]const u8, openssl.ERR_reason_error_string(openssl.ERR_get_error()))});
+            return error.CouldNotGetBytes;
+        }
+    }
 };
 
 fn get_x_coordinate(point: *const openssl.EC_POINT, group: *const openssl.EC_GROUP, out: *[32]u8) !void {
